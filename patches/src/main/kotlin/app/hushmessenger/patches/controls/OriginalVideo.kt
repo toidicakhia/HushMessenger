@@ -36,8 +36,9 @@ private fun Instruction.wide() = (this as? WideLiteralInstruction)?.wideLiteral
 private fun Instruction.field() = (this as? ReferenceInstruction)?.reference as? FieldReference
 
 /**
- * Index of the one size check that decides between Messenger's passthrough and a re-encode. 583 computes a limit from
- * the target bitrate and the duration, adds Messenger's configured margin in KB and keeps the original on less-than:
+ * Index of the one size check that decides between Messenger's passthrough and a re-encode. The arm64 builds compute a
+ * limit from the target bitrate and the duration, add Messenger's configured margin in KB and keep the original on
+ * less-than:
  *
  *     iget-wide vSize, vMeta, <metadata>->bytes:J
  *     ...                    vLimit = target bitrate
@@ -53,17 +54,38 @@ private fun Instruction.field() = (this as? ReferenceInstruction)?.reference as?
  *     cmp-long vR, vSize, vLimit     <- returned
  *     if-ltz vR, :keep_original
  *
+ * The armv7 builds use a constant five-million margin instead, with the size read two instructions earlier:
+ *
+ *     iget-wide vSize, vMeta, <metadata>->bytes:J
+ *     ...                    vLimit = target bitrate
+ *     int-to-long vLimit, vLimit
+ *     iget-wide vT, vMeta, <metadata>->durationMs:J
+ *     mul-long/2addr vLimit, vT
+ *     const-wide/16 vT, 8000
+ *     div-long/2addr vLimit, vT
+ *     const-wide/32 vT, 5000000
+ *     add-long/2addr vLimit, vT
+ *     cmp-long vR, vSize, vLimit     <- returned
+ *     if-gez vR, :keep_original
+ *
  * A negative result keeps the original. The checks before it (trims, overlays, muting, the codec and Messenger's own
  * passthrough size cap) and the force-transcode option after it are left as they are. Messenger skips this check when
  * its margin is zero or less, and then this patch can't keep the original either.
  */
 internal fun Method.videoPassthroughSite(): Int {
     val code = implementation?.instructions?.toList() ?: videoTranscodeChanged("no code")
-    fun configuredMargin(c: Int) = code[c + 1].opcode == Opcode.IF_LTZ &&
+    fun configuredMargin(c: Int) = c >= 11 && code[c + 1].opcode == Opcode.IF_LTZ &&
         code[c - 6].opcode == Opcode.CONST_WIDE_16 && code[c - 6].wide() == 8000L &&
         code[c - 3].opcode == Opcode.MUL_INT_LIT16 && code[c - 3].wide() == 1000L
-    val sites = (11 until code.size - 1).filter { c -> code[c].opcode == Opcode.CMP_LONG && configuredMargin(c) }
+    fun constantMargin(c: Int) = (code[c + 1].opcode == Opcode.IF_GEZ || code[c + 1].opcode == Opcode.IF_LTZ) &&
+        code[c - 4].opcode == Opcode.CONST_WIDE_16 && code[c - 4].wide() == 8000L &&
+        code[c - 2].opcode == Opcode.CONST_WIDE_32 && code[c - 2].wide() == 5_000_000L &&
+        code[c - 3].opcode == Opcode.DIV_LONG_2ADDR && code[c - 5].opcode == Opcode.MUL_LONG_2ADDR
+    val sites = (9 until code.size - 1).filter { c ->
+        code[c].opcode == Opcode.CMP_LONG && (configuredMargin(c) || constantMargin(c))
+    }
     val c = sites.singleOrNull() ?: videoTranscodeChanged("${sites.size} size checks")
+    val constant = constantMargin(c)
     val cmp = code[c] as ThreeRegisterInstruction
     val limit = cmp.registerC
     val size = cmp.registerB
@@ -71,26 +93,31 @@ internal fun Method.videoPassthroughSite(): Int {
     fun twoReg(at: Int, op: Opcode) = (code[at] as? TwoRegisterInstruction)?.takeIf { code[at].opcode == op }
         ?: videoTranscodeChanged("${code[at].opcode.name} at the limit")
     val add = twoReg(c - 1, Opcode.ADD_LONG_2ADDR)
-    val widenMargin = twoReg(c - 2, Opcode.INT_TO_LONG)
-    val margin = twoReg(c - 3, Opcode.MUL_INT_LIT16)
-    val div = twoReg(c - 5, Opcode.DIV_LONG_2ADDR)
-    val mul = twoReg(c - 7, Opcode.MUL_LONG_2ADDR)
-    val duration = twoReg(c - 8, Opcode.IGET_WIDE)
-    val widen = twoReg(c - 9, Opcode.INT_TO_LONG)
-    val bytes = twoReg(c - 11, Opcode.IGET_WIDE)
-    val temp = (code[c - 6] as OneRegisterInstruction).registerA
-    val marginInTemp = widenMargin.registerA == temp && widenMargin.registerB == temp && margin.registerA == temp && margin.registerB == temp
+    val div = twoReg(if (constant) c - 3 else c - 5, Opcode.DIV_LONG_2ADDR)
+    val mul = twoReg(if (constant) c - 5 else c - 7, Opcode.MUL_LONG_2ADDR)
+    val duration = twoReg(if (constant) c - 6 else c - 8, Opcode.IGET_WIDE)
+    val widen = twoReg(if (constant) c - 7 else c - 9, Opcode.INT_TO_LONG)
+    val bytes = twoReg(if (constant) c - 9 else c - 11, Opcode.IGET_WIDE)
+    val temp = (code[if (constant) c - 2 else c - 6] as OneRegisterInstruction).registerA
+    val marginInTemp = if (constant) true else {
+        val widenMargin = twoReg(c - 2, Opcode.INT_TO_LONG)
+        val margin = twoReg(c - 3, Opcode.MUL_INT_LIT16)
+        widenMargin.registerA == temp && widenMargin.registerB == temp &&
+            margin.registerA == temp && margin.registerB == temp
+    }
     if (add.registerA != limit || add.registerB != temp || !marginInTemp || div.registerA != limit || div.registerB != temp ||
         mul.registerA != limit || mul.registerB != duration.registerA || widen.registerA != limit || widen.registerB != limit) {
         videoTranscodeChanged("limit arithmetic")
     }
-    val bytesField = code[c - 11].field() ?: videoTranscodeChanged("size field")
-    val durationField = code[c - 8].field() ?: videoTranscodeChanged("duration field")
+    val bytesIndex = if (constant) c - 9 else c - 11
+    val durationIndex = if (constant) c - 6 else c - 8
+    val bytesField = code[bytesIndex].field() ?: videoTranscodeChanged("size field")
+    val durationField = code[durationIndex].field() ?: videoTranscodeChanged("duration field")
     if (bytes.registerA != size || bytesField.type != "J" || durationField.type != "J" ||
         bytesField.definingClass != durationField.definingClass || bytesField.name == durationField.name ||
         bytes.registerB != duration.registerB) videoTranscodeChanged("metadata reads")
     // Nothing between the size read and the compare may write the size pair.
-    for (at in c - 10 until c) {
+    for (at in (if (constant) c - 8 else c - 10) until c) {
         val written = (code[at] as? OneRegisterInstruction)?.registerA ?: continue
         if (written == size || written == size + 1 || written + 1 == size) videoTranscodeChanged("size register reused")
     }

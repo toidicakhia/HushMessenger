@@ -33,6 +33,8 @@ class ControlProfileTest {
     @Test fun theVersionCodePicksTheProfile() {
         assertEquals(MessengerTarget.VERSION_CODES.toSet(), controlProfiles.keys)
         for (code in listOf("346611350", "346611351", "346611353")) assertSame(PROFILE_346611351, controlProfileFor(code))
+        assertSame(PROFILE_346611347, controlProfileFor("346611347"))
+        for (code in listOf("346611363", "346611416", "346611433")) assertSame(PROFILE_346611433, controlProfileFor(code))
         // 346611418 and 346611435 are the nodpi builds Morphe Manager downloads.
         for (code in listOf("346611369", "346611386", "346611418", "346611420", "346611422", "346611423", "346611435", "346611436", "346611438",
             "346611439", "346611440", null)) {
@@ -53,7 +55,7 @@ class ControlProfileTest {
         activeProfile = controlProfileFor("346611369", profiles)
         val failure = assertFailsWith<PatchException> { validateControls(found, setOf("ad_context_banner"), versions) }
         assertContains(failure.message.orEmpty(),
-            "Use an unmodified arm64 Messenger ${MessengerTarget.supportedApks()} or 584.0.0.1.91 APK (version code 347000001).")
+            "Use an unmodified arm64 or armv7 Messenger ${MessengerTarget.supportedApks()} or 584.0.0.1.91 APK (version code 347000001).")
     }
 
     @Test fun validationFollowsTheActiveBuild() {
@@ -76,7 +78,7 @@ class ControlProfileTest {
     private val folded = "LX/34B;->A0l(${builder}Ljava/lang/Iterable;)Lcom/google/common/collect/ImmutableList;"
 
     // Shaped like 583's BaseXappComposerConfigurationFactory.A6l, where one call takes the builder and the local list.
-    // [addAllCopy] is 582's form instead: the builder's addAll, then a build.
+    // [addAllCopy] is the armv7 form instead: the builder's addAll, then a build.
     private fun inlineTabs(
         extraCopy: Boolean = false,
         branchIntoCopy: Boolean = false,
@@ -134,8 +136,19 @@ class ControlProfileTest {
         assertFailsWith<PatchException> { inlineTabs(catchIntoCopy = true).injectKeyboardTabsInline() }
     }
 
-    @Test fun a582TabListCopiedThroughTheBuildersAddAllIsRefused() {
-        assertFailsWith<PatchException> { inlineTabs(addAllCopy = true).injectKeyboardTabsInline() }
+    @Test fun anArmv7TabListCopiedThroughTheBuildersAddAllIsFiltered() {
+        val method = inlineTabs(addAllCopy = true)
+        val copyIndex = method.implementation!!.instructions.indexOfFirst {
+            (it as? ReferenceInstruction)?.reference.toString() == copy
+        }
+        method.injectKeyboardTabsInline()
+        val call = method.getInstruction(copyIndex)
+        assertEquals(Opcode.INVOKE_STATIC_RANGE, call.opcode)
+        assertEquals("$SETTINGS->removeAvatarTabs(Ljava/lang/Iterable;)V", (call as ReferenceInstruction).reference.toString())
+        val range = call as com.android.tools.smali.dexlib2.iface.instruction.RegisterRangeInstruction
+        assertEquals(12, range.startRegister)
+        assertEquals(1, range.registerCount)
+        assertEquals(copy, (method.getInstruction(copyIndex + 1) as ReferenceInstruction).reference.toString())
     }
 
     @Test fun compatReportTakesTheTabListOnlyWhereThePatchCanFilterIt() {
@@ -147,10 +160,11 @@ class ControlProfileTest {
             return patch to CompatMirror.controls(classes).containsKey("avatar_tabs")
         }
         assertEquals(true to true, takenBy(inlineTabs()))
+        assertEquals(true to true, takenBy(inlineTabs(addAllCopy = true)))
         for ((name, refused) in mapOf(
             "two copies" to inlineTabs(extraCopy = true), "a branch into the copy" to inlineTabs(branchIntoCopy = true),
             "a switch case into the copy" to inlineTabs(switchIntoCopy = true), "a catch into the copy" to inlineTabs(catchIntoCopy = true),
-            "582's addAll" to inlineTabs(addAllCopy = true), "the range form" to inlineTabs(rangeCopy = true),
+            "the range form" to inlineTabs(rangeCopy = true),
         )) assertEquals(false to false, takenBy(refused), name)
     }
 }

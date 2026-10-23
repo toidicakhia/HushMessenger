@@ -213,14 +213,14 @@ internal fun findControls(classes: Iterable<ClassDef>, community: CommunityInbox
             }
             val instructions = method.implementation?.instructions?.toList() ?: continue
             val refs = instructions.mapNotNull { (it as? ReferenceInstruction)?.reference }
-            val strings = refs.filterIsInstance<StringReference>().map { it.string }.toSet()
+            val strings = (refs.filterIsInstance<StringReference>().map { it.string } +
+                method.tableStrings(stringTables)).toSet()
             val gate = method.returnType == "Z" && method.parameterTypes.isEmpty()
             if (instructions.any { it.isEmojiDrawerFlag() }) drawerReaders.add(method)
             if (EMOJI_DRAWER_ANCHOR in strings) drawerAnchors.add(method)
             if (method.returnType == "Z" && (method.parameterTypes.isEmpty() ||
                 (AccessFlags.STATIC.isSet(method.accessFlags) && method.parameterTypes == listOf(cls.type)))) {
-                val anchors = strings + method.tableStrings(stringTables)
-                for ((key, spec) in pluginGates) if (anchors.any { it in spec.anchors }) add(key)
+                for ((key, spec) in pluginGates) if (strings.any { it in spec.anchors }) add(key)
             }
             if (adContract && method.returnType == IMMUTABLE_LIST && method.parameterTypes.size == 3 &&
                 strings.containsAll(setOf("messaging.inbox.itemlistprocessor.ItemListProcessorInterfaceSpec", "processItems", "new_friend_bump_threads"))) add("ads")
@@ -417,7 +417,7 @@ internal fun validateControls(
         if (actual.size != expected.size || actual.toSet() != expected) {
             val why = screenshotViewerRefusal?.takeIf { feature == "screenshot_viewers" }?.let { " $it." } ?: ""
             throw PatchException("Messenger controls: $feature hooks differ from the tested build.$why " +
-                "Use an unmodified arm64 Messenger ${MessengerTarget.supportedApks(versions)}.")
+                "Use an unmodified arm64 or armv7 Messenger ${MessengerTarget.supportedApks(versions)}.")
         }
     }
 }
@@ -468,7 +468,8 @@ internal fun MutableMethod.injectPluginGate(key: String) {
 /** The notes tip launcher: an instance suspend call whose result is whether it showed a sheet. */
 internal fun MutableMethod.validateNotesTips() {
     validateScratch()
-    val strings = implementation!!.instructions.mapNotNull { ((it as? ReferenceInstruction)?.reference as? StringReference)?.string }
+    val strings = implementation!!.instructions.mapNotNull { ((it as? ReferenceInstruction)?.reference as? StringReference)?.string } +
+        tableStrings(controlStringTables)
     if (AccessFlags.STATIC.isSet(accessFlags) || returnType != "Ljava/lang/Object;" ||
         NOTES_TIP_SHEET !in strings || NOTES_TIP_TYPE_ARG !in strings) {
         throw PatchException("Messenger controls: the notes tip launcher no longer matches the tested build")
@@ -790,10 +791,6 @@ internal fun ClassDef.hasMessageIdGetter(): Boolean = messageIdGetterName.isNotE
 /** The Notifications tab's server flag ID as 583 numbers it. Meta renumbers it with each release. */
 private const val PEOPLE_SERVER_FLAG = 72344188615735036L
 
-/** The section check's register count, and the register that holds its false default. */
-private const val PEOPLE_SECTION_REGISTERS = 8
-private const val PEOPLE_SECTION_DEFAULT = 3
-
 /**
  * Where the Notifications tab loads its server flag: the method's only constant with that value, at 17, after the
  * preference branch at 12.
@@ -808,8 +805,8 @@ private fun Method.isPeopleSectionShape() = parameterTypes.map(CharSequence::toS
 /**
  * The Notifications tab reads its stock "section hidden" preference into v0 and branches on it. A hidden
  * section is still shown when a server flag (v0, three instructions after its constant) is on; both branches
- * land on the final false return. The false value lives in v3 of the eight-register body, which logs a skipped
- * impression under a monitor after the server branch.
+ * land on the final false return. The zero const at 9 loads the false default, v3 in the eight-register builds
+ * and v5 in the ten-register builds; it logs a skipped impression under a monitor after the server branch.
  */
 internal fun MutableMethod.validatePeopleSection() {
     val code = implementation!!.instructions.toList()
@@ -819,7 +816,8 @@ internal fun MutableMethod.validatePeopleSection() {
     val at = code.peopleFlagIndex()
     val flag = code.getOrNull(at)
     val last = code.lastIndex
-    val no = if (implementation!!.registerCount == PEOPLE_SECTION_REGISTERS) PEOPLE_SECTION_DEFAULT else -1
+    val no = default?.takeIf { it.opcode == Opcode.CONST_4 && (it as? NarrowLiteralInstruction)?.narrowLiteral == 0 }
+        ?.let { (it as? OneRegisterInstruction)?.registerA } ?: -1
     if (!AccessFlags.STATIC.isSet(accessFlags) || returnType != "Z" || !isPeopleSectionShape() || no < 0 ||
         flag?.opcode != Opcode.CONST_WIDE || (flag as? OneRegisterInstruction)?.registerA != 0 ||
         code.getOrNull(at + 1)?.opcode != Opcode.INVOKE_STATIC ||
@@ -1041,20 +1039,31 @@ internal fun MutableMethod.injectMenuDrawerAdd() {
 private const val IMMUTABLE_LIST_BUILDER = "Lcom/google/common/collect/ImmutableList\$Builder;"
 
 /**
- * 583 fills the keyboard's tab list inline: it copies a local ArrayList of tab items into an ImmutableList.Builder once,
- * handing the builder and the list to one static (ImmutableList.Builder, Iterable) -> ImmutableList call. Returns the
- * copy's index and list register.
+ * 583 fills the keyboard's tab list inline, then hands it to an ImmutableList builder. The arm64 builds pass the builder
+ * and the list to one static (ImmutableList.Builder, Iterable) -> ImmutableList call; the armv7 builds call
+ * ImmutableList.Builder.addAll(Iterable) and convert the builder with a static (Builder) -> ImmutableList call.
+ * Returns the copy's index and list register.
  */
 internal fun MutableMethod.validateKeyboardTabsInline(): Pair<Int, Int> {
     fun changed(): Nothing = throw PatchException("Messenger controls: the sticker keyboard tab list differs from the tested build")
     val code = implementation!!.instructions.toList()
-    val copy = code.indices.filter { index ->
+    val staticCopy = code.indices.filter { index ->
         val call = (code[index] as? ReferenceInstruction)?.reference as? DexMethodReference
         code[index].opcode == Opcode.INVOKE_STATIC && call != null && call.returnType == IMMUTABLE_LIST &&
             call.parameterTypes.map { it.toString() } == listOf(IMMUTABLE_LIST_BUILDER, "Ljava/lang/Iterable;")
     }.singleOrNull()
+    val builderCopy = code.indices.filter { index ->
+        val call = (code[index] as? ReferenceInstruction)?.reference as? DexMethodReference
+        val next = (code.getOrNull(index + 1) as? ReferenceInstruction)?.reference as? DexMethodReference
+        code[index].opcode == Opcode.INVOKE_VIRTUAL && call != null && call.definingClass == IMMUTABLE_LIST_BUILDER &&
+            call.name == "addAll" && call.returnType == IMMUTABLE_LIST_BUILDER &&
+            call.parameterTypes.map { it.toString() } == listOf("Ljava/lang/Iterable;") &&
+            code.getOrNull(index + 1)?.opcode == Opcode.INVOKE_STATIC && next != null &&
+            next.returnType == IMMUTABLE_LIST && next.parameterTypes.map { it.toString() } == listOf(IMMUTABLE_LIST_BUILDER)
+    }.singleOrNull()
     // Code inserted before a jump target would be skipped by whatever jumps there.
-    if (returnType != "V" || copy == null || copy in jumpTargets()) changed()
+    val copy = staticCopy ?: builderCopy ?: changed()
+    if (returnType != "V" || copy in jumpTargets()) changed()
     return copy to (code[copy] as FiveRegisterInstruction).registerD
 }
 

@@ -1,5 +1,6 @@
 package app.hushmessenger.patches.coexist
 
+import app.hushmessenger.patches.MessengerTarget
 import app.morphe.patcher.patch.PatchException
 import org.w3c.dom.Document
 import org.w3c.dom.Element
@@ -40,8 +41,8 @@ class InstallBesideMetaAppsPatchTest {
     }
 
     private fun assertActionable(failure: PatchException) {
-        assertContains(failure.message.orEmpty(), "Use an unmodified arm64 Messenger 583.0.0.29.95 APK")
-        assertContains(failure.message.orEmpty(), "version code 346611350 or 346611351 or 346611353 or 346611369")
+        assertContains(failure.message.orEmpty(), "Use an unmodified arm64 or armv7 Messenger 583.0.0.29.95 APK")
+        assertContains(failure.message.orEmpty(), MessengerTarget.supportedApks())
     }
 
     private fun manifest(): Document {

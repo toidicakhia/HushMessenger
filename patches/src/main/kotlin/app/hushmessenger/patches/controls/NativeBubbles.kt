@@ -409,7 +409,35 @@ private fun bubbleShortcutField(byType: Map<String, ClassDef>, shortcut: Method)
         ref?.name == "<init>" && ref.definingClass == shortcut.returnType &&
             ref.bubbleParameters().toList().contains(SHORTCUT) &&
             s.argument(at, ref.bubbleParameters().indexOf(SHORTCUT) + 1)?.let { s.callValue(at, it) == build } == true
-    } ?: return null
+    }
+    if (containerCtor == null) {
+        // The armv7 shortcut holder copies ShortcutInfo from a small holder object in its constructor.
+        val container = byType[shortcut.returnType] ?: return null
+        for (ctor in container.methods) {
+            if (ctor.name != "<init>" || ctor.implementation == null) continue
+            val code = ctor.bubbleCode()
+            for (at in code.indices) {
+                val write = code[at] as? TwoRegisterInstruction ?: continue
+                if (code[at].opcode != Opcode.IPUT_OBJECT) continue
+                val target = (code[at] as? ReferenceInstruction)?.reference as? FieldReference ?: continue
+                if (target.type != SHORTCUT || target.definingClass != shortcut.returnType) continue
+                if (container.fields.none {
+                        it.name == target.name && it.type == target.type && !AccessFlags.STATIC.isSet(it.accessFlags)
+                    }) continue
+                val source = write.registerA
+                for (j in at - 1 downTo 0) {
+                    val read = code[j] as? TwoRegisterInstruction ?: continue
+                    if (code[j].opcode != Opcode.IGET_OBJECT) continue
+                    val origin = (code[j] as? ReferenceInstruction)?.reference as? FieldReference ?: continue
+                    if (origin.type != SHORTCUT) continue
+                    val holder = BubbleValues(ctor).parameter(origin.definingClass)
+                    if (read.registerA == source && holder != null && read.registerB == holder) return target
+                    break
+                }
+            }
+        }
+        return null
+    }
     if (!s.returns(s.key(containerCtor, s.argument(containerCtor, 0)!!))) return null
     val constructor = target(s.reference(containerCtor)) ?: return null
     val cf = BubbleValues(constructor)

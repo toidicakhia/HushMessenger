@@ -73,6 +73,8 @@ internal val settingsResources = resourcePatch(description = "Install HushMessen
 }
 
 internal var discoveredControls: Map<String, List<Method>> = emptyMap()
+/** Redex string tables for the build being patched, so validators can read strings loaded by key. */
+internal var controlStringTables: Map<String, Map<Int, String>> = emptyMap()
 internal var nativeBubbleActivityVerified = false
 internal var nativeBubbleRoutesVerified = false
 internal var communityInboxContract: CommunityInboxContract? = null
@@ -88,6 +90,7 @@ internal val settingsExtension = bytecodePatch(description = "Load HushMessenger
         classDefForEach { classes.add(it) }
         communityInboxContract = findCommunityInbox(classes)
         discoveredControls = findControls(classes, communityInboxContract)
+        controlStringTables = redexStringTables(classes)
         logoLongPressSites = findLogoLongPress(classes)
         menuTitleLongPressSites = findLogoLongPress(classes, MENU_TAB_TITLE)
         val nativeGate = discoveredControls["bubble_mode"].orEmpty().singleOrNull()

@@ -46,8 +46,8 @@ internal val VIDEO_TRANSCODE_BODY = """
     return-void
 """.trimIndent()
 
-/** Some 582 builds kept a fixed 5 MB margin and branched to the re-encode instead. No 583 build does, so it's refused. */
-private val FIXED_MARGIN_582_BODY = """
+/** The armv7 builds use a fixed 5 MB margin and branch to the re-encode instead of reading Messenger's configured one. */
+private val CONSTANT_MARGIN_ARMV7_BODY = """
     const-string v0, "$VIDEO_PASSTHROUGH_MARK"
     iget-wide v13, v0, LX/YCo;->A09:J
     move v2, v4
@@ -80,7 +80,7 @@ private fun assertPassthroughHook(before: List<Instruction>, target: Int, after:
     assertEquals(Opcode.MOVE_RESULT, after[site + 2].opcode, message)
     assertEquals(11, (after[site + 2] as OneRegisterInstruction).registerA, message)
     assertEquals(before, after.filterIndexed { i, _ -> i != site + 1 && i != site + 2 }, message)
-    assertEquals(Opcode.IF_LTZ, after[site + 3].opcode, message)
+    assertTrue(after[site + 3].opcode == Opcode.IF_LTZ || after[site + 3].opcode == Opcode.IF_GEZ, message)
     assertTrue(target >= 0, message)
     assertEquals(if (target > site) target + 2 else target, after.branchTarget(site + 3), message)
 }
@@ -100,23 +100,30 @@ class OriginalVideoTest {
         assertPassthroughHook(before, target, method.code(), site, "fixture at $site")
     }
 
+    @Test fun theArmv7SizeCheckAsksTheSwitchAndKeepsEveryStockInstruction() {
+        val fixture = listOf(fixtureClass(MEDIA_TRANSCODER, listOf(fixtureMethod(VIDEO_TRANSCODE, CONSTANT_MARGIN_ARMV7_BODY, registers = 24))))
+        val found = mirroredControls(fixture)
+        validateControls(found, setOf(ORIGINAL_VIDEO))
+        val method = found.getValue(ORIGINAL_VIDEO).single() as MutableMethod
+        val before = method.code()
+        val site = method.videoPassthroughSite()
+        val target = before.branchTarget(site + 1)
+        injectControl(ORIGINAL_VIDEO, mapOf(ORIGINAL_VIDEO to listOf(method)))
+        assertPassthroughHook(before, target, method.code(), site, "armv7 fixture at $site")
+    }
+
     @Test fun anyOtherMarginIsRefused() {
         for (changed in listOf(
             VIDEO_TRANSCODE_BODY.replace("mul-int/lit16 v11, v11, 1000", "mul-int/lit16 v11, v11, 1024"),
             VIDEO_TRANSCODE_BODY.replace("if-ltz v11, :keep", "if-gez v11, :keep"),
             VIDEO_TRANSCODE_BODY.replace("add-long/2addr v2, v11", "add-long/2addr v2, v12"),
-            FIXED_MARGIN_582_BODY,
-            FIXED_MARGIN_582_BODY.replace("if-gez v11, :encode", "if-ltz v11, :encode"),
+            CONSTANT_MARGIN_ARMV7_BODY.replace("const-wide/32 v11, 5000000", "const-wide/32 v11, 5000001"),
+            CONSTANT_MARGIN_ARMV7_BODY.replace("const-wide/16 v11, 8000", "const-wide/16 v11, 8001"),
+            CONSTANT_MARGIN_ARMV7_BODY.replace("div-long/2addr v2, v11", "add-long/2addr v2, v11"),
         )) {
             val method = fixtureMethod(VIDEO_TRANSCODE, changed, registers = 24)
             assertFailsWith<PatchException> { method.videoPassthroughSite() }
         }
-        // Discovery still finds 582's fixed-margin worker by its strings, and the patch refuses it before any edit.
-        val found = mirroredControls(listOf(fixtureClass(MEDIA_TRANSCODER, listOf(fixtureMethod(VIDEO_TRANSCODE, FIXED_MARGIN_582_BODY, registers = 24)))))
-        val method = found.getValue(ORIGINAL_VIDEO).single() as MutableMethod
-        val before = method.code()
-        assertFailsWith<PatchException> { injectControl(ORIGINAL_VIDEO, mapOf(ORIGINAL_VIDEO to listOf(method))) }
-        assertEquals(before, method.code())
     }
 
     @Test fun everySupportedBuildHooksItsOneVideoSizeCheck() {

@@ -31,6 +31,18 @@ def elf(alignment=16384, machine=183, address=0):
     return bytes(data)
 
 
+def elf32(alignment=16384, machine=40, address=0):
+    data = bytearray(84)
+    data[:7] = b"\x7fELF\x01\x01\x01"
+    struct.pack_into("<HHI", data, 16, 3, machine, 1)
+    struct.pack_into("<I", data, 28, 52)
+    struct.pack_into("<HHH", data, 40, 52, 32, 1)
+    struct.pack_into(
+        "<IIIIIIII", data, 52, 1, 0, address, 0, len(data), len(data), 5, alignment
+    )
+    return bytes(data)
+
+
 def apk_file(path, data=None, name=LIBRARY, compression=ZIP_DEFLATED, aligned=False):
     entry = ZipInfo(name)
     entry.compress_type = compression
@@ -49,7 +61,7 @@ class NativeChecks(unittest.TestCase):
                 apk_file(path, compression=compression)
                 for page_size in (4096, 16384):
                     with self.subTest(compression=compression, page_size=page_size):
-                        libraries, alignment, compressed = checker.native_libraries(
+                        libraries, alignment, compressed, abi = checker.native_libraries(
                             path, page_size, True
                         )
                         self.assertEqual(
@@ -57,6 +69,7 @@ class NativeChecks(unittest.TestCase):
                         )
                         self.assertEqual(alignment, 16384)
                         self.assertEqual(compressed, int(compression == ZIP_DEFLATED))
+                        self.assertEqual(abi, "arm64-v8a")
 
     def test_direct_mapping_requires_uncompressed_aligned_zip_data(self):
         with tempfile.TemporaryDirectory() as root:
@@ -99,6 +112,36 @@ class NativeChecks(unittest.TestCase):
                 apk_file(path, name=name)
                 with self.subTest(name=name), self.assertRaises(ValueError):
                     checker.native_libraries(path, 4096, True)
+
+    def test_armv7_elf32_libraries_are_accepted_and_checked(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "native.apk"
+            name = "lib/armeabi-v7a/libsample.so"
+            apk_file(path, elf32(), name=name)
+            libraries, alignment, compressed, abi = checker.native_libraries(
+                path, 16384, True
+            )
+            self.assertEqual(libraries, {name: hashlib.sha256(elf32()).hexdigest()})
+            self.assertEqual(alignment, 16384)
+            self.assertEqual(compressed, 1)
+            self.assertEqual(abi, "armeabi-v7a")
+
+    def test_a_library_must_match_its_abi_folder_and_only_one_abi_is_allowed(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "native.apk"
+            for name, data in (
+                ("lib/armeabi-v7a/libsample.so", elf()),
+                ("lib/arm64-v8a/libsample.so", elf32()),
+                ("lib/armeabi-v7a/libsample.so", elf32(machine=3)),
+            ):
+                apk_file(path, data, name=name)
+                with self.subTest(name=name, data=bytes(data[:24])), self.assertRaises(ValueError):
+                    checker.native_libraries(path, 16384, True)
+            with ZipFile(path, "w") as archive:
+                archive.writestr("lib/arm64-v8a/lib64.so", elf())
+                archive.writestr("lib/armeabi-v7a/lib32.so", elf32())
+            with self.assertRaises(ValueError):
+                checker.native_libraries(path, 16384, True)
 
     def test_incorrect_zip_lengths_produce_a_controlled_error(self):
         with tempfile.TemporaryDirectory() as root:

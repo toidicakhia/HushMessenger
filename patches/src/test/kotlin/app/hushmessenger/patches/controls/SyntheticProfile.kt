@@ -152,6 +152,7 @@ class SyntheticProfileExtension : TestInstancePreConstructCallback, BeforeEachCa
     private fun reset() {
         activeProfile = SYNTHETIC_PROFILE
         controlProfilesInUse = controlProfiles
+        controlStringTables = emptyMap()
     }
 }
 

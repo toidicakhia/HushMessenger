@@ -7,7 +7,9 @@ package app.hushmessenger.patches.coexist
 
 import app.hushmessenger.patches.MessengerTarget
 import app.hushmessenger.patches.controls.BASE_PROFILE
+import app.hushmessenger.patches.controls.PROFILE_346611347
 import app.hushmessenger.patches.controls.PROFILE_346611351
+import app.hushmessenger.patches.controls.PROFILE_346611433
 import app.hushmessenger.patches.controls.controlProfileFor
 import app.hushmessenger.patches.controls.hookId
 import app.hushmessenger.patches.controls.resolveShortcutsPath
@@ -295,6 +297,14 @@ private const val BROADCAST = "->A00(Landroid/content/Intent;Landroid/content/Co
 private const val NOTIFICATION = "->A04(Landroid/os/Bundle;)"
 private const val CLICK = "->onClick(Landroid/view/View;)V"
 
+private val expectedCloneSites346611347 = setOf("LX/P0Z;-><init>()V", "LX/4JO;$ATTACHMENT_CHECK", "LX/39F;$BROADCAST@1",
+    "LX/KBD;->A05(Landroid/os/Bundle;)LX/LdK;@189", "LX/KBD;->A05(Landroid/os/Bundle;)LX/LdK;@282",
+    "LX/C9C;$CLICK@79", "LX/JSs;$CLICK@170")
+
+private val expectedCloneSites346611433 = setOf("LX/P0X;-><init>()V", "LX/4JO;$ATTACHMENT_CHECK", "LX/39F;$BROADCAST@1",
+    "LX/KBD;->A05(Landroid/os/Bundle;)LX/LdJ;@189", "LX/KBD;->A05(Landroid/os/Bundle;)LX/LdJ;@282",
+    "LX/C9D;$CLICK@79", "LX/JSs;$CLICK@170")
+
 /**
  * Each build family's backup lookup and attachment check, then every setPackage call that sends Messenger to itself:
  * the in-app broadcast sender, the push notification's click and link intents, the bulk delete link in the inbox and
@@ -307,6 +317,8 @@ internal fun expectedCloneSitesFor(versionCode: String): Set<String> {
             "LX/T9J;${NOTIFICATION}LX/Uh6;@321", "LX/CBZ;$CLICK@79", "LX/JpW;$CLICK@176")
         PROFILE_346611351 -> setOf("LX/EEi;-><init>()V", "LX/4HM;$ATTACHMENT_CHECK", "LX/38n;$BROADCAST@1", "LX/KRb;${NOTIFICATION}LX/Lpm;@231",
             "LX/KRb;${NOTIFICATION}LX/Lpm;@328", "LX/C7O;$CLICK@79", "LX/JmU;$CLICK@108")
+        PROFILE_346611347 -> expectedCloneSites346611347
+        PROFILE_346611433 -> expectedCloneSites346611433
         else -> fail("version code $versionCode has no checked clone sites")
     }
 }

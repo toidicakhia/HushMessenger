@@ -40,7 +40,7 @@ internal fun Document.spoofVersionCode(real: String, spoofed: Int) {
 }
 
 private fun refuse(reason: String): Nothing =
-    throw PatchException("$SPOOF_VERSION_PATCH: $reason. Use an unmodified arm64 Messenger ${MessengerTarget.supportedApks()}.")
+    throw PatchException("$SPOOF_VERSION_PATCH: $reason. Use an unmodified arm64 or armv7 Messenger ${MessengerTarget.supportedApks()}.")
 
 @Suppress("unused")
 val spoofPackageVersionPatch = resourcePatch(

@@ -97,6 +97,24 @@ class GrowthPromptsTest {
         assertEquals(before, code.drop(6))
     }
 
+    @Test fun theNotesTipLauncherReadsItsTypeArgumentFromTheBuildsStringTable() {
+        val method = launcher("""
+            const/16 v0, 0x2a
+            invoke-static {v0}, Lfixture/Strings;->A00(I)Ljava/lang/String;
+            move-result-object v0
+            const-string v1, "$NOTES_TIP_SHEET"
+            const/4 v0, 0x0
+            return-object v0
+        """.trimIndent())
+        controlStringTables = mapOf("Lfixture/Strings;->A00(I)Ljava/lang/String;" to mapOf(42 to NOTES_TIP_TYPE_ARG))
+        try {
+            method.injectNotesTips()
+            assertEquals("growth", reference(method.implementation!!.instructions.toList()[0]))
+        } finally {
+            controlStringTables = emptyMap()
+        }
+    }
+
     @Test fun aNotesTipLauncherThatChangedShapeIsRejected() {
         fun rejects(method: MutableMethod) =
             assertFailsWith<PatchException> { method.injectNotesTips() }

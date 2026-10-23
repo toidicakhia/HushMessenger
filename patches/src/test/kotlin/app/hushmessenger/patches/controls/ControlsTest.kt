@@ -239,19 +239,18 @@ class ControlsTest {
         assertEquals(code.lastIndex, code.branchTarget(serverBranch + 4))
     }
 
-    /** The reader has eight registers and keeps false in v3; 582's ten-register reader with its own flag is refused. */
-    @Test fun theNotificationsReaderKeepsFalseInV3AndRefuses582s() {
-        val reader = peopleJewelMethod()
-        reader.injectPeopleSection()
-        val code = reader.implementation!!.instructions.toList()
-        assertEquals("$SETTINGS->hidePeopleSection(Z)Z", (code[12] as ReferenceInstruction).reference.toString())
-        assertEquals("$SETTINGS->keepPeopleSection(Z)Z", (code[22] as ReferenceInstruction).reference.toString())
+    /** The false default is v3 in arm64's eight registers and v5 in armv7's ten; 582's own flag is refused. */
+    @Test fun theNotificationsReaderTakesItsFalseDefaultAndRefuses582s() {
+        for (reader in listOf(peopleJewelMethod(), peopleJewelMethod(default = "v5", registers = 10))) {
+            reader.injectPeopleSection()
+            val code = reader.implementation!!.instructions.toList()
+            assertEquals("$SETTINGS->hidePeopleSection(Z)Z", (code[12] as ReferenceInstruction).reference.toString())
+            assertEquals("$SETTINGS->keepPeopleSection(Z)Z", (code[22] as ReferenceInstruction).reference.toString())
+            assertEquals(code.lastIndex, code.branchTarget(14))
+            assertEquals(code.lastIndex, code.branchTarget(24))
+        }
         val flag582 = "72344188615734930L"
         for (changed in listOf(
-            // The false default has to be in v3 of eight registers.
-            peopleJewelMethod(default = "v5"),
-            peopleJewelMethod(registers = 10),
-            peopleJewelMethod(registers = 9),
             // 582's reader: its own flag, false in v5 of ten registers.
             peopleJewelMethod(serverFlag = flag582, default = "v5", registers = 10, logger = "v3"),
             peopleJewelMethod(serverFlag = flag582),

@@ -136,7 +136,7 @@ class NativeMediaControlsTest {
     @Test fun allMappingsReplaceOnlyTheFourCallsAndRetainTheirMasksAndLifecycle() {
         for (profile in controlProfiles.values.toSet()) {
             activeProfile = profile
-            for (size in listOf(449, 450)) {
+            for (size in listOf(449, 450, 451)) {
                 val methods = profile.hooks.getValue("screenshot_viewers").map { screenshotViewerFixture(it, size) }
                 for (method in methods) {
                     val before = method.implementation!!.instructions.toList()
@@ -198,9 +198,10 @@ class NativeMediaControlsTest {
             screenshotViewerFixture("$EPHEMERAL_VIEWER->A1D(Landroid/os/Bundle;)Landroid/app/Dialog;").screenshotViewerSites()
         }
         val quick = "$QUICKSNAP_VIEWER->onCreateView(Landroid/view/LayoutInflater;Landroid/view/ViewGroup;Landroid/os/Bundle;)Landroid/view/View;"
-        // Messenger 583 runs it to 449, or 450 in 346611351, with the same guarded prefix.
+        // Messenger 583 runs it to 449, 450 in 346611351, or 451 in the armv7 builds, with the same guarded prefix.
         assertEquals(listOf(32), screenshotViewerFixture(quick, 449).screenshotViewerSites())
         assertEquals(listOf(32), screenshotViewerFixture(quick, 450).screenshotViewerSites())
+        assertEquals(listOf(32), screenshotViewerFixture(quick, 451).screenshotViewerSites())
         assertFailsWith<PatchException> { screenshotViewerFixture(quick, 444).screenshotViewerSites() }
         // 582's 438 and 441 instruction bodies are refused.
         for (size in listOf(438, 441)) assertFailsWith<PatchException> { screenshotViewerFixture(quick, size).screenshotViewerSites() }
@@ -215,9 +216,12 @@ class NativeMediaControlsTest {
             assertTrue(findAiStickerCells(aiStickerCellFixture(cell.render, label = 0x7f140511)).isEmpty())
             assertTrue(findAiStickerCells(aiStickerCellFixture(cell.render, label = 0x7f14051c)).isEmpty())
         }
-        // Both namings offer 583's label from four renders, and 346611351's cell render is one instruction shorter.
-        assertEquals(listOf(Triple(GENERATE_AI_LABEL, 4, 104), Triple(GENERATE_AI_LABEL, 4, 105)),
-            aiCells.map { Triple(it.label, it.sources, it.size) })
+        // Both arm64 namings offer 583's label from four renders, and 346611351's cell render is one instruction
+        // shorter. The armv7 namings use their own scope and component, with two more instructions in the render.
+        assertEquals(listOf(
+            Triple(GENERATE_AI_LABEL, 4, 104), Triple(GENERATE_AI_LABEL, 4, 105),
+            Triple(GENERATE_AI_LABEL, 4, 107), Triple(GENERATE_AI_LABEL, 4, 107),
+        ), aiCells.map { Triple(it.label, it.sources, it.size) })
     }
 
     @Test fun a582CellIsNoLongerFound() {
@@ -275,9 +279,9 @@ class NativeMediaControlsTest {
         }
     }
 
-    /** Both 583 namings' cells, each under its own name, to check the injection compares 583's label. */
+    /** All four 583 namings' cells, each under its own name, to check the injection compares 583's label. */
     @Test fun eachCellCompares583sLabel() {
-        assertEquals(2, aiCells.size)
+        assertEquals(4, aiCells.size)
         for (cell in aiCells) {
             val base = SYNTHETIC_PROFILE
             activeProfile = ControlProfile(base.hooks + ("ai_sticker_cell" to setOf(cell.render)), base.pluginSentinel, base.preferenceGetter,

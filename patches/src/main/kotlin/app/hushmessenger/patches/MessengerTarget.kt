@@ -5,7 +5,7 @@ import app.morphe.patcher.patch.AppTarget
 import app.morphe.patcher.patch.Compatibility
 
 /**
- * The stock arm64 Messenger builds the patches were checked against.
+ * The stock arm64 and armv7 Messenger builds the patches were checked against.
  *
  * A version name alone is insufficient: Meta publishes several DEX variants with that name. Each
  * build is recorded in scripts/profiles by CompatReport; the APKs themselves are local research
@@ -15,10 +15,10 @@ internal object MessengerTarget {
     const val PACKAGE = "com.facebook.orca"
     const val MIN_SDK = 28
 
-    /** Each supported version name and the version codes of its checked arm64 builds. */
+    /** Each supported version name and the version codes of its checked arm64 and armv7 builds. */
     val VERSIONS: Map<String, List<Int>> = mapOf(
-        "583.0.0.29.95" to listOf(346611350, 346611351, 346611353, 346611369, 346611386, 346611418, 346611420, 346611422,
-            346611423, 346611435, 346611436, 346611438, 346611439, 346611440),
+        "583.0.0.29.95" to listOf(346611347, 346611350, 346611351, 346611353, 346611363, 346611369, 346611386, 346611416,
+            346611418, 346611420, 346611422, 346611423, 346611433, 346611435, 346611436, 346611438, 346611439, 346611440),
     )
     val VERSION_CODES = VERSIONS.values.flatten()
 
@@ -44,7 +44,7 @@ internal object MessengerTarget {
                 version = name,
                 versionCodes = null,
                 minSdk = MIN_SDK,
-                description = "Arm64 $builds; checked again during patching",
+                description = "Arm64 and armv7 $builds; checked again during patching",
             )
         },
     )

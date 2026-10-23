@@ -368,21 +368,28 @@ def native_extraction(output: str) -> bool:
 
 def native_libraries(
     path: Path, page_size: int, extract: bool
-) -> tuple[dict[str, str], int, int]:
-    """Validate packaged arm64 ELF segments and hash decompressed library bytes."""
+) -> tuple[dict[str, str], int, int, str]:
+    """Validate packaged ELF segments and hash decompressed library bytes."""
     libraries = {}
     alignments = []
     compressed = 0
+    abi = None
     with ZipFile(path) as archive, path.open("rb") as raw:
         for entry in archive.infolist():
             if not entry.filename.startswith("lib/") or not entry.filename.endswith(
                 ".so"
             ):
                 continue
-            if not re.fullmatch(r"lib/arm64-v8a/[^/]+\.so", entry.filename):
+            match = re.fullmatch(
+                r"lib/(arm64-v8a|armeabi-v7a)/[^/]+\.so", entry.filename
+            )
+            if not match:
                 raise ValueError(
-                    "The APK must contain only the supported arm64-v8a libraries"
+                    "The APK must contain only supported arm64-v8a or armeabi-v7a libraries"
                 )
+            if abi is not None and abi != match[1]:
+                raise ValueError("The APK must contain native libraries for one ABI")
+            abi = match[1]
             if entry.filename in libraries or entry.flag_bits & 1:
                 raise ValueError("Duplicate or encrypted native library entry")
             if entry.compress_type not in {ZIP_STORED, ZIP_DEFLATED}:
@@ -404,39 +411,68 @@ def native_libraries(
             compressed += entry.compress_type != ZIP_STORED
             with archive.open(entry) as source:
                 header = source.read(64)
-                if (
-                    len(header) != 64
-                    or header[:7] != b"\x7fELF\x02\x01\x01"
-                    or struct.unpack_from("<HH", header, 16) != (3, 183)
-                ):
-                    raise ValueError(
-                        "A packaged library is not a valid arm64 ELF shared object"
-                    )
-                offset = struct.unpack_from("<Q", header, 32)[0]
-                size, count = struct.unpack_from("<HH", header, 54)
-                if (
-                    size != 56
-                    or not count
-                    or offset < 64
-                    or offset + size * count > entry.file_size
-                ):
-                    raise ValueError("Invalid ELF program-header table")
+                if len(header) < 52 or header[:4] != b"\x7fELF" or header[6] != 1:
+                    raise ValueError("A packaged library is not a valid ELF shared object")
+                if header[4] == 2:
+                    if abi != "arm64-v8a" or struct.unpack_from("<HH", header, 16) != (3, 183):
+                        raise ValueError(
+                            "A packaged library is not a valid arm64 ELF shared object"
+                        )
+                    offset = struct.unpack_from("<Q", header, 32)[0]
+                    size, count = struct.unpack_from("<HH", header, 54)
+                    if (
+                        size != 56
+                        or not count
+                        or offset < 64
+                        or offset + size * count > entry.file_size
+                    ):
+                        raise ValueError("Invalid ELF program-header table")
+                    program_header = "<IIQQQQQQ"
+                elif header[4] == 1:
+                    if abi != "armeabi-v7a" or struct.unpack_from("<HH", header, 16) != (3, 40):
+                        raise ValueError(
+                            "A packaged library is not a valid armv7 ELF shared object"
+                        )
+                    offset = struct.unpack_from("<I", header, 28)[0]
+                    size, count = struct.unpack_from("<HH", header, 42)
+                    if (
+                        size != 32
+                        or not count
+                        or offset < 52
+                        or offset + size * count > entry.file_size
+                    ):
+                        raise ValueError("Invalid ELF program-header table")
+                    program_header = "<IIIIIIII"
+                else:
+                    raise ValueError("Unsupported ELF class")
                 source.seek(offset)
                 table = source.read(size * count)
                 if len(table) != size * count:
                     raise ValueError("Truncated ELF program-header table")
                 loads = 0
                 for number in range(count):
-                    (
-                        kind,
-                        _,
-                        file_offset,
-                        address,
-                        _,
-                        file_size,
-                        memory_size,
-                        alignment,
-                    ) = struct.unpack_from("<IIQQQQQQ", table, number * size)
+                    if header[4] == 2:
+                        (
+                            kind,
+                            _,
+                            file_offset,
+                            address,
+                            _,
+                            file_size,
+                            memory_size,
+                            alignment,
+                        ) = struct.unpack_from(program_header, table, number * size)
+                    else:
+                        (
+                            kind,
+                            file_offset,
+                            address,
+                            _,
+                            file_size,
+                            memory_size,
+                            _,
+                            alignment,
+                        ) = struct.unpack_from(program_header, table, number * size)
                     if kind != 1:
                         continue
                     loads += 1
@@ -463,8 +499,8 @@ def native_libraries(
                 if source.tell() != entry.file_size:
                     raise ValueError("Truncated native-library ZIP data")
     if not libraries:
-        raise ValueError("The APK has no packaged arm64-v8a native libraries")
-    return libraries, min(alignments), compressed
+        raise ValueError("The APK has no packaged arm64-v8a or armeabi-v7a native libraries")
+    return libraries, min(alignments), compressed, abi
 
 
 def check_native(
@@ -473,8 +509,6 @@ def check_native(
     abis = run(adb + ["shell", "getprop", "ro.product.cpu.abilist"]).strip().split(",")
     if not abis or any(not re.fullmatch(r"[A-Za-z0-9_-]+", abi) for abi in abis):
         raise ValueError("Cannot read the device ABI list")
-    if "arm64-v8a" not in abis:
-        raise ValueError("The selected Android device cannot run this arm64-v8a APK")
     page_size = int(run(adb + ["shell", "getconf", "PAGE_SIZE"]).strip())
     if page_size < 4096 or page_size > 65536 or page_size & (page_size - 1):
         raise ValueError("Cannot establish the device memory page size")
@@ -482,9 +516,11 @@ def check_native(
     extract = native_extraction(
         run([aapt, "dump", "xmltree", str(args.apk), "--file", "AndroidManifest.xml"])
     )
-    libraries, alignment, compressed = native_libraries(args.apk, page_size, extract)
+    libraries, alignment, compressed, abi = native_libraries(args.apk, page_size, extract)
+    if abi not in abis:
+        raise ValueError(f"The selected Android device cannot run this {abi} APK")
     print(
-        f"Native APK ABI: arm64-v8a; device ABIs: {', '.join(abis)}; page size: {page_size} bytes"
+        f"Native APK ABI: {abi}; device ABIs: {', '.join(abis)}; page size: {page_size} bytes"
     )
     print(
         f"Native libraries: {len(libraries)} ({compressed} compressed); minimum ELF alignment: {alignment} bytes"
@@ -501,7 +537,7 @@ def check_native(
         raise ValueError(
             "Stock baseline SHA-256 does not match the tested original for this build"
         )
-    stock, _, _ = native_libraries(baseline, page_size, True)
+    stock, _, _, _ = native_libraries(baseline, page_size, True)
     if libraries != stock:
         raise ValueError(
             "Native library names or decompressed bytes differ from the stock baseline"

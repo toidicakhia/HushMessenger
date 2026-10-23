@@ -12,7 +12,7 @@ internal val CODES_583 = MessengerTarget.VERSIONS.getValue("583.0.0.29.95").join
 
 class DexSiteContractTest {
     private fun assertActionable(failure: PatchException) {
-        assertContains(failure.message.orEmpty(), "Use an unmodified arm64 Messenger 583.0.0.29.95 APK")
+        assertContains(failure.message.orEmpty(), "Use an unmodified arm64 or armv7 Messenger 583.0.0.29.95 APK")
         assertContains(failure.message.orEmpty(), "version code $CODES_583)")
     }
 
@@ -40,7 +40,7 @@ class DexSiteContractTest {
             validateDexSites(expectedDexSites.toList(), expectedDexSitesFor("347000001", sites), versions)
         }
         assertContains(failure.message.orEmpty(),
-            "Use an unmodified arm64 Messenger ${MessengerTarget.supportedApks()} or 584.0.0.1.91 APK (version code 347000001).")
+            "Use an unmodified arm64 or armv7 Messenger ${MessengerTarget.supportedApks()} or 584.0.0.1.91 APK (version code 347000001).")
     }
 
     @Test

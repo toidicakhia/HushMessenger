@@ -83,8 +83,8 @@ internal fun Method.screenshotViewerSites(): List<Int> {
             parameterTypes.map { it.toString() } == listOf("Landroid/view/LayoutInflater;", "Landroid/view/ViewGroup;", "Landroid/os/Bundle;") &&
             returnType == "Landroid/view/View;" -> {
             sites = listOf(32); allowedJumps = emptySet()
-            // 583 runs it to 449, or 450 in 346611351.
-            implementation!!.registerCount == 23 && code.size in setOf(449, 450) &&
+            // 583 runs it to 449, 450 in 346611351, or 451 in the armv7 builds.
+            implementation!!.registerCount == 23 && code.size in setOf(449, 450, 451) &&
                 result(26, "Landroid/app/Dialog;", 0) && nullCheck(27, 0, 33) && window(28, "Landroid/app/Dialog;", 0, 1, 33) &&
                 literal(31, 0) && call(32, ADD_FLAGS, listOf(1, 0))
         }
@@ -115,7 +115,8 @@ internal fun MutableMethod.injectScreenshotViewer() {
 
 /**
  * The cell under each 583 naming, the label it shows, how many renders offer that label and how many instructions its own
- * render has (24 registers in both). Both offer the label from four renders; 346611351's render is one instruction shorter.
+ * render has (24 registers in all four). All offer the label from four renders; 346611351's render is one instruction
+ * shorter, and the armv7 cells' are two longer than the default.
  */
 internal data class AiCell(
     val type: String, val superclass: String, val scope: String, val component: String,
@@ -126,6 +127,8 @@ internal data class AiCell(
 internal val aiCells = listOf(
     AiCell("LX/F0Y;", "LX/1NT;", "LX/2Cf;", "LX/1Gu;", size = 104),
     AiCell("LX/F3k;", "LX/1NT;", "LX/2Cf;", "LX/1Gu;"),
+    AiCell("LX/EgI;", "LX/1Nt;", "LX/2D5;", "LX/1HK;", size = 107),
+    AiCell("LX/EgG;", "LX/1Nt;", "LX/2D5;", "LX/1HK;", size = 107),
 )
 internal const val AI_CELL_SIZE = 105
 internal const val AI_CELL_REGISTERS = 24

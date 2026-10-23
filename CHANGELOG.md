@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### New
+
+- **armv7 builds of Messenger 583.0.0.29.95 work now.** HushMessenger adds four 32-bit builds (`346611347`, `346611363`, `346611416`, `346611433`) beside the arm64 builds. The patches find their spots in the armv7 DEX through their own recorded profiles, including the two-launch Instagram link handler, the native bubble holder, the constant-margin video check and the extra AI sticker cell. Morphe Desktop applied all 58 default patches to each of the four, plus Clone install on both armv7 mappings, and rebuilt them. The README lists every version code with its SHA-256.
+
 ## 0.25.0 (2026-10-18)
 
 ### Reported issues

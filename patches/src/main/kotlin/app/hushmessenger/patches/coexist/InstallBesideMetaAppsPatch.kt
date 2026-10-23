@@ -49,7 +49,7 @@ private val expectedManifestRoles = mapOf(
     ),
 )
 
-// Component names and instruction sites match every supported 583 arm64 APK.
+// Component names and instruction sites match every supported 583 arm64 and armv7 APK.
 internal val expectedGuardOwners = mapOf(
     APP_COMMUNICATION to mapOf(
         "activity" to setOf(
@@ -108,6 +108,15 @@ internal val expectedDexSites346611351 = mapOf(
     "Lcom/facebook/common/appinit/invoker/OnApplicationInitInvoker;->A0d(Lcom/facebook/common/appinit/invoker/OnApplicationInitInvoker;I)V@253" to APP_COMMUNICATION_FORMAT,
 )
 
+internal val expectedDexSites346611347 = mapOf(
+    "LX/0gS;->A03()V@25" to APP_COMMUNICATION,
+    "LX/0ix;->A04(Landroid/app/Application;)V@18" to APP_COMMUNICATION_FORMAT,
+    "LX/1dg;->A05(Lcom/facebook/auth/usersession/FbUserSession;LX/1dg;Ljava/lang/String;Ljava/lang/String;)V@36" to APP_COMMUNICATION,
+    "LX/2Fc;->A01(Landroid/content/Intent;LX/2Fc;)V@24" to APP_COMMUNICATION_FORMAT,
+    "LX/34J;->A05(Ljava/lang/Object;ILX/5dc;I)Ljava/lang/Object;@1168" to APP_COMMUNICATION_FORMAT,
+    "Lcom/facebook/common/appinit/invoker/OnApplicationInitInvoker;->A0c(Lcom/facebook/common/appinit/invoker/OnApplicationInitInvoker;I)V@601" to APP_COMMUNICATION_FORMAT,
+)
+
 /** Each supported build's permission loads, by version code, as scripts/profiles records them. */
 internal val expectedDexSitesByBuild: Map<Int, Map<String, String>> = mapOf(
     346611350 to expectedDexSites346611351,
@@ -124,6 +133,10 @@ internal val expectedDexSitesByBuild: Map<Int, Map<String, String>> = mapOf(
     346611438 to expectedDexSites,
     346611439 to expectedDexSites,
     346611440 to expectedDexSites,
+    346611347 to expectedDexSites346611347,
+    346611363 to expectedDexSites346611347,
+    346611416 to expectedDexSites346611347,
+    346611433 to expectedDexSites346611347,
 )
 
 internal fun expectedDexSitesFor(
@@ -135,7 +148,7 @@ private fun renamed(name: String): String =
     SHARED_PREFIX + name.removePrefix(META_PREFIX)
 
 private fun unsupportedApk(reason: String, versions: Map<String, List<Int>> = MessengerTarget.VERSIONS) =
-    PatchException("$PATCH_NAME: $reason. Use an unmodified arm64 Messenger ${MessengerTarget.supportedApks(versions)}.")
+    PatchException("$PATCH_NAME: $reason. Use an unmodified arm64 or armv7 Messenger ${MessengerTarget.supportedApks(versions)}.")
 
 /**
  * Every patch that touches Messenger runs this first, and Manager shows whichever dependent patch
@@ -146,7 +159,7 @@ internal fun validateVersionCode(versionCode: String, versions: Map<String, List
     if (versions.values.none { versionCode.toIntOrNull() in it }) {
         throw PatchException(
             "This Messenger build (version code $versionCode) isn't supported yet, so nothing was patched. " +
-                "Use an unmodified arm64 Messenger ${MessengerTarget.supportedApks(versions)}. " +
+                "Use an unmodified arm64 or armv7 Messenger ${MessengerTarget.supportedApks(versions)}. " +
                 "APKMirror lists the version code of every download.",
         )
     }

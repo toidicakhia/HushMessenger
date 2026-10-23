@@ -56,6 +56,10 @@ class RestoreTrustShapesTest {
 
     private val Instruction.reference get() = (this as ReferenceInstruction).reference
 
+    /** Each launch's two inserted instructions after reportLinkLaunches, counting the shifts lower launches cause. */
+    private fun insertedAt(sites: List<LinkLaunchSite>): List<Int> =
+        sites.sortedBy { it.index }.flatMapIndexed { k, site -> listOf(site.index + 1 + 2 * k, site.index + 2 + 2 * k) }
+
     @Test
     fun `the answer is read through a copy of this and Messenger's path is kept`() {
         val method = signersMethod(6)
@@ -249,7 +253,6 @@ class RestoreTrustShapesTest {
     fun `a link launcher the call can't be placed in stops the patch before any edit`() {
         val cases = mapOf(
             "uses its launch's answer" to threadsLauncher(after = "move-result v0"),
-            "has 2 launches" to threadsLauncher(before = "invoke-virtual {v0, p1, v1}, $FAMILY_LAUNCH"),
             "has 0 launches" to threadsLauncher(launch = "invoke-virtual {v0, p1, v1}, LX/0RU;->A0B(Landroid/content/Context;Landroid/content/Intent;)V"),
             "jumps to the return" to threadsLauncher(before = "if-eqz v2, :done"),
             "other than its own" to threadsLauncher(launch = "invoke-virtual {v0, v2, v1}, $FAMILY_LAUNCH"),
@@ -270,6 +273,44 @@ class RestoreTrustShapesTest {
             val failure = assertThrows(PatchException::class.java) { method.linkLaunchSite("Threads") }
             assertEquals(true, failure.message.orEmpty().contains(message), "$message: ${failure.message}")
             assertEquals(before, method.body(), message)
+        }
+    }
+
+    /** Instagram's armv7 launcher: one launch per installed package, each with its own return. */
+    private fun instagramLauncher() = fixtureMethod(
+        "LX/KVd;->A00(Landroid/content/Context;Landroid/net/Uri;)V",
+        """
+            const-string v2, "com.instagram.android"
+            invoke-static {p2}, $INTENT_FROM_LINK
+            move-result-object v1
+            invoke-virtual {v1, v2}, Landroid/content/Intent;->setPackage(Ljava/lang/String;)Landroid/content/Intent;
+            iget-object v0, p0, LX/KVd;->A01:LX/0Le;
+            :first
+            invoke-virtual {v0, p1, v1}, $FAMILY_LAUNCH
+            return-void
+            iget-object v0, p0, LX/KVd;->A01:LX/0Le;
+            :second
+            invoke-virtual {v0, p1, v1}, $FAMILY_LAUNCH
+            return-void
+        """.trimIndent(),
+        registers = 7,
+        flags = AccessFlags.PUBLIC.value or AccessFlags.FINAL.value,
+    )
+
+    @Test
+    fun `a launcher with two launches reports each one`() {
+        val method = instagramLauncher()
+        val before = method.body()
+        val sites = method.linkLaunchSites("Instagram")
+        assertEquals(2, sites.size)
+        method.reportLinkLaunches(sites)
+        val after = method.body()
+        assertEquals(before.size + 4, after.size)
+        assertEquals(before, after.filterIndexed { i, _ -> i !in insertedAt(sites) })
+        for (at in insertedAt(sites).chunked(2)) {
+            assertEquals(Opcode.MOVE_RESULT, after[at[0]].opcode)
+            assertEquals(Opcode.INVOKE_STATIC, after[at[1]].opcode)
+            assertEquals(FAMILY_LINK_LAUNCHED, (after[at[1]] as ReferenceInstruction).reference.toString())
         }
     }
 
@@ -296,9 +337,11 @@ class RestoreTrustShapesTest {
                 assertEquals(1, launchers.size, "$code $tag")
                 val method = MutableMethod(launchers.single())
                 val before = method.body()
-                val site = method.linkLaunchSite(tag)
-                method.reportLinkLaunch(site)
-                assertEquals(before, method.body().filterIndexed { i, _ -> i != site.index + 1 && i != site.index + 2 }, "$code $tag")
+                val sites = method.linkLaunchSites(tag)
+                assertEquals(true, sites.isNotEmpty(), "$code $tag")
+                method.reportLinkLaunches(sites)
+                val inserted = insertedAt(sites).toSet()
+                assertEquals(before, method.body().filterIndexed { i, _ -> i !in inserted }, "$code $tag")
             }
         }
     }
