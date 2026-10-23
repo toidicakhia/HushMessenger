@@ -1,7 +1,7 @@
 ![HushMessenger. Keep the conversation. Cut the friction.](assets/readme-hero.png)
 
 <p align="center">
-  <a href="https://github.com/SysAdminDoc/HushMessenger/releases/tag/v0.25.0"><img src="https://img.shields.io/badge/version-0.25.0-0084FF" alt="Version 0.25.0"></a>
+  <a href="https://github.com/toidicakhia/HushMessenger/releases/tag/v0.25.1"><img src="https://img.shields.io/badge/version-0.25.1-0084FF" alt="Version 0.25.1"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License GPL-3.0"></a>
   <img src="https://img.shields.io/badge/platform-Android%209%2B%20arm64%20%7C%20armv7-3DDC84" alt="Platform Android 9 or newer, arm64 or armv7">
   <img src="https://img.shields.io/badge/Messenger-583.0.0.29.95-0084FF" alt="Messenger 583.0.0.29.95">
@@ -23,6 +23,9 @@ HushMessenger is a set of [Morphe](https://morphe.software) patches for Facebook
 
 Every switch starts off, so a freshly patched Messenger behaves like stock until you turn something on. The current release has 61 patches. What changed in each version is in the [changelog](CHANGELOG.md).
 
+> [!NOTE]
+> This is the armv7 fork release. It builds on 0.25.0 and adds the four armv7 Messenger 583 builds. Install [`patches-0.25.1.mpp`](https://github.com/toidicakhia/HushMessenger/releases/download/v0.25.1/patches-0.25.1.mpp) as a local source in Morphe Manager. Upstream's 0.26.0 bundle has newer changes but does not include armv7 support.
+
 **[Add HushMessenger to Morphe Manager](https://morphe.software/add-source?github=SysAdminDoc%2FHushMessenger)**
 
 > [!IMPORTANT]
@@ -35,7 +38,7 @@ Every switch starts off, so a freshly patched Messenger behaves like stock until
 3. **Patch Messenger.** The default selection includes every switch. Three patches start unselected because they change the app package itself: **Clone install under another package name**, **Spoof package version** and **Custom new-message sound**. To add one, turn on **Settings → Advanced → Expert mode** in Manager and use **Choose patches**.
 4. **Keep one source.** Don't add the remote source and a local copy together, and don't mix in Messenger patches from other sources.
 
-Prefer a local source? Download [`patches-0.25.0.mpp`](https://github.com/SysAdminDoc/HushMessenger/releases/tag/v0.25.0) and add it through **Sources > + > Local**. It won't update itself. The `.mpp` file is a patch bundle, not a Messenger APK. Morphe Desktop 1.18.1 can load the same source too.
+Prefer a local source? Download [`patches-0.25.1.mpp`](https://github.com/toidicakhia/HushMessenger/releases/download/v0.25.1/patches-0.25.1.mpp) and add it through **Sources > + > Local**. It won't update itself. The `.mpp` file is a patch bundle, not a Messenger APK. Morphe Desktop 1.18.1 can load the same source too.
 
 ## Settings
 
@@ -127,7 +130,7 @@ The screenshots below show the settings in the current release, in the dark and 
 
 - **Can't find the settings.** Long-press Messenger's home screen icon and tap **Patch controls**. If no way in shows up at all, refresh the source and patch again.
 - **Switches do nothing.** The settings live inside the patched Messenger, and refreshing a source only downloads patches. Patch and install again. The Meta AI tab and the old emoji drawer only change after **Restart Messenger**. Inbox options wait for the next chat list Messenger builds, and a restart applies them right away.
-- **The source shows an old version or misses a patch.** Refresh it and check that it shows the version of the [latest release](https://github.com/SysAdminDoc/HushMessenger/releases/latest). A local source needs the new `.mpp` added by hand.
+- **The source shows an old version or misses a patch.** Refresh it and check that it shows the version of the [latest fork release](https://github.com/toidicakhia/HushMessenger/releases/latest). A local source needs the new `.mpp` added by hand.
 - **APK rejected.** Use an unmodified arm64 or armv7 Messenger 583.0.0.29.95 whose version code is in the [supported builds](#supported-messenger-builds). The error names the builds it checked. When the log says "This Messenger build (version code N) isn't supported yet", that's the whole problem, and the patch Manager names above it (often **Allow chat bubbles**) didn't fail on its own.
 - **Android won't install over stock Messenger.** A re-signed APK can't replace Meta's signed copy. Back up first, since going from one to the other means uninstalling. Later updates of your patched copy need the same key.
 - **`signatures do not match` even though you uninstalled Messenger.** Every user on a phone shares one copy of an app, so Messenger is probably still installed somewhere else: Samsung's Secure Folder, a work profile or a second user. Look there before changing anything, and back up that copy's chats if you decide to remove it. **Clone install under another package name** gets around it without touching that copy. The [install check](#verify-a-download) lists the signer it finds.
@@ -187,19 +190,21 @@ On Windows, compare your file with `Get-FileHash -Algorithm SHA256 .\messenger.a
 
 ## Verify a download
 
-The [v0.25.0 release](https://github.com/SysAdminDoc/HushMessenger/releases/tag/v0.25.0) ships `SHA256SUMS.txt` beside the bundle. Compare its `.mpp` hash with your download.
+The [v0.25.1 fork release](https://github.com/toidicakhia/HushMessenger/releases/tag/v0.25.1) ships `SHA256SUMS.txt` beside the bundle. Compare its `.mpp` hash with your download.
 
 ```text
-18232add72c25c953cbccc79ba53cf7b861f0f760539d413774f1c6c3b53b5d7  patches-0.25.0.mpp
+d7628e6b96bfa679d33670792c160f132de202e8841fb778d16bcb7f64984a8a  patches-0.25.1.mpp
 ```
 
-`SHA256SUMS.txt.sig` is an SSH signature made with the project's release key. Its fingerprint is `SHA256:Z+UfHy7IUbtgNRO/wHkIr68+u4I+SIKPY9avfx/VAPU` and its public half is in [`scripts/release_signers`](scripts/release_signers). Morphe doesn't check this signature, so checking it is up to you. Download the three files from the same tag and run this in a terminal (OpenSSH 8.1 or newer, which Windows 10 and later include; in PowerShell wrap it in `cmd /c "..."`):
+This fork release ships `SHA256SUMS.txt` beside the bundle but no `.sig` file, because it isn't signed with the upstream project's release key. Compare the hash above with your download.
+
+Upstream HushMessenger bundles are signed with the project's SSH release key. Its fingerprint is `SHA256:Z+UfHy7IUbtgNRO/wHkIr68+u4I+SIKPY9avfx/VAPU` and its public half is in [`scripts/release_signers`](scripts/release_signers). To verify an upstream bundle, download its three files from the same tag and run this in a terminal (OpenSSH 8.1 or newer, which Windows 10 and later include; in PowerShell wrap it in `cmd /c "..."`):
 
 ```text
 ssh-keygen -Y verify -f release_signers -I SysAdminDoc -n hushmessenger-release -s SHA256SUMS.txt.sig < SHA256SUMS.txt
 ```
 
-An untouched file prints `Good "hushmessenger-release" signature for SysAdminDoc`. The private key lives only on my PC and never on GitHub, so a good signature still means something if the GitHub account is ever taken over. If the key ever changes, the changelog will say so and why.
+An untouched upstream file prints `Good "hushmessenger-release" signature for SysAdminDoc`.
 
 Before you install a patched APK, `scripts/check_install.py` can compare its signer with what's on the phone and catch a version downgrade without changing anything. It needs Python 3.11 or newer, JDK 21, Android Build Tools and an authorized ADB connection. Exit `0` means the certificate, downgrade and native-library checks passed.
 
